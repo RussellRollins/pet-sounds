@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"strings"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/gohcl"
@@ -15,7 +16,7 @@ import (
 
 const (
 	environmentKey = "env"
-	catSoundKey    = "CAT_SOUND"
+	envVarPrefix   = "PS_"
 
 	defaultCatSound = "meow"
 	defaultDogBreed = "mutt"
@@ -140,7 +141,7 @@ func ReadConfig(filename string) ([]Pet, error) {
 	for _, p := range petsHCL.PetHCLBodies {
 		switch petType := p.Type; petType {
 		case "cat":
-			cat := &Cat{Name: p.Name, Sound: defaultCatSound}
+			cat := &Cat{Name: p.Name}
 			if p.CharacteristicsHCL != nil {
 				if diag := gohcl.DecodeBody(p.CharacteristicsHCL.HCL, evalContext, cat); diag.HasErrors() {
 					return []Pet{}, fmt.Errorf(
@@ -148,15 +149,21 @@ func ReadConfig(filename string) ([]Pet, error) {
 					)
 				}
 			}
+			if cat.Sound == "" {
+				cat.Sound = defaultCatSound
+			}
 			pets = append(pets, cat)
 		case "dog":
-			dog := &Dog{Name: p.Name, Breed: defaultDogBreed}
+			dog := &Dog{Name: p.Name}
 			if p.CharacteristicsHCL != nil {
 				if diag := gohcl.DecodeBody(p.CharacteristicsHCL.HCL, evalContext, dog); diag.HasErrors() {
 					return []Pet{}, fmt.Errorf(
 						"error in ReadConfig decoding dog HCL configuration: %w", diag,
 					)
 				}
+			}
+			if dog.Breed == "" {
+				dog.Breed = defaultDogBreed
 			}
 			pets = append(pets, dog)
 		default:
@@ -174,19 +181,30 @@ func ReadConfig(filename string) ([]Pet, error) {
 // (namely, CAT_SOUND). It also creates a function "random(...string)" that can
 // be used to assign a random value in an HCL config.
 func createContext() (*hcl.EvalContext, error) {
-	// Extract the sound cats make from the environment, with a default.
-	catSound := defaultCatSound
-	if os.Getenv(catSoundKey) != "" {
-		catSound = os.Getenv(catSoundKey)
+	// Extract all environment variables prefixed with PS_
+	prefixed := map[string]cty.Value{}
+	for _, e := range os.Environ() {
+		e := strings.SplitN(e, "=", 2)
+		if len(e) != 2 {
+			continue
+		}
+		key := e[0]
+		value := e[1]
+
+		// If the environment variable key matches the prefix, remove the
+		// prefix and allow the value to be accessed at that key.
+		// For instance:
+		// PS_CAT_SOUND="nyan" => env.CAT_SOUND => "nyan"
+		if strings.HasPrefix(key, envVarPrefix) {
+			key := strings.TrimPrefix(key, envVarPrefix)
+			prefixed[key] = cty.StringVal(value)
+		}
 	}
 
 	// variables is a list of cty.Value for use in Decoding HCL. These will
-	// be nested by using ObjectVal as a value. For istance:
-	//   env.CAT_SOUND => "meow"
+	// be nested by using ObjectVal as a value.
 	variables := map[string]cty.Value{
-		environmentKey: cty.ObjectVal(map[string]cty.Value{
-			catSoundKey: cty.StringVal(catSound),
-		}),
+		environmentKey: cty.ObjectVal(prefixed),
 	}
 
 	// functions is a list of cty.Functions for use in Decoding HCL.

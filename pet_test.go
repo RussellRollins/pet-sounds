@@ -27,7 +27,7 @@ func TestReadConfig(t *testing.T) {
 			name:  "variables",
 			input: "testdata/variables.hcl",
 			environment: map[string]string{
-				"CAT_SOUND": "nyan",
+				"PS_CAT_SOUND": "nyan",
 			},
 			want: []Pet{
 				&Cat{Name: "Neko", Sound: "nyan"},
