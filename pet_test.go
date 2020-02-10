@@ -38,7 +38,7 @@ func TestReadConfig(t *testing.T) {
 			name:  "functions",
 			input: "testdata/function.hcl",
 			want: []Pet{
-				&Dog{Name: "Spot", Breed: "Pug"},
+				&Dog{Name: "Spot", Breed: "Pug/Dachshund Mix"},
 			},
 		},
 	}

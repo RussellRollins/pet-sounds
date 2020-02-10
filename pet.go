@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"strings"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/gohcl"
@@ -194,7 +195,10 @@ func createContext() (*hcl.EvalContext, error) {
 		"random": function.New(&function.Spec{
 			// Params represents required positional arguments, of which random
 			// has none.
-			Params: []function.Parameter{},
+			Params: []function.Parameter{
+				function.Parameter{Type: cty.Number, Name: "count"},
+				function.Parameter{Type: cty.String, Name: "seperator"},
+			},
 			// VarParam allows a "VarArgs" type input, in this case, of
 			// strings.
 			VarParam: &function.Parameter{Type: cty.String},
@@ -202,12 +206,52 @@ func createContext() (*hcl.EvalContext, error) {
 			// the case of Random it only accepts strings and only returns
 			// strings.
 			Type: function.StaticReturnType(cty.String),
-			// Impl is the actual function. A "VarArgs" number of cty.String
-			// will be passed in and a random one returned, also as a
-			// cty.String.
+			// Impl is the actual function. First a count, then a seperating
+			// character, then A "VarArgs" number of cty.String will be passed
+			// in and a random count returned, joined by seperator, will be
+			// returned as a cty.String.
 			Impl: func(args []cty.Value, retType cty.Type) (cty.Value, error) {
-				resp := args[rand.Intn(len(args))]
-				return cty.StringVal(resp.AsString()), nil
+				// The first argument is a number, the count of random items to
+				// select. Get that count as an int64.
+				cCount := args[0]
+				count, _ := cCount.AsBigFloat().Int64()
+
+				// The second argument is a string, with which to join the
+				// selected iteams. Get that seperator as a string.
+				cSep := args[1]
+				sep := cSep.AsString()
+
+				// Now discard the first two arguments, giving us the VarArgs
+				// list of strings to select from.
+				args = args[2:]
+
+				// Validate there are enough to satisfy the request.
+				if int64(len(args)) < count {
+					return cty.NilVal,
+						fmt.Errorf(
+							"unable to select %d random elements from list of length %d",
+							count,
+							len(args),
+						)
+				}
+
+				// Grab a random element from the VarArgs. Add it to the
+				// response and remove it, so it cannot be selected twice.
+				resp := ""
+				for i := 0; int64(i) < count; i++ {
+					idx := rand.Intn(len(args))
+					newString := args[idx].AsString()
+					if resp == "" {
+						resp = newString
+					} else {
+						resp = strings.Join([]string{resp, newString}, sep)
+					}
+					args = append(args[:idx], args[idx+1:]...)
+				}
+
+				// Return a StringVal. For instance:
+				//   random(3, ", ", "a", "b", "c") => "c, a, b"
+				return cty.StringVal(resp), nil
 			},
 		}),
 	}

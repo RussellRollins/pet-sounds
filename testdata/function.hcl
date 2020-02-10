@@ -1,6 +1,6 @@
 pet "Spot" {
   type = "dog"
   characteristics {
-    breed = random("Lab", "Dachshund", "Pug")
+    breed = "${random(2, "/", "Lab", "Dachshund", "Pug")} Mix"
   }
 }
